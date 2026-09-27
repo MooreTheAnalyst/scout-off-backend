@@ -643,6 +643,50 @@ const config = {
     resetTimeoutMs: parseNumericEnv('IPFS_BREAKER_RESET_TIMEOUT_MS', process.env.IPFS_BREAKER_RESET_TIMEOUT_MS, 30000, { min: 1, integer: true }),
   },
 
+  // ── Database migration validation (#1318) ─────────────────────────────
+  /** Migration checksum policy: "strict" fails startup on mismatch (prod), "warn" logs and continues (dev). */
+  migrationChecksumMode: (() => {
+    const mode = (process.env.MIGRATION_CHECKSUM_MODE ?? '').toLowerCase();
+    const valid = ['strict', 'warn'] as const;
+    const validStr = valid as readonly string[];
+    if (mode && !validStr.includes(mode)) {
+      throw new Error(`Invalid MIGRATION_CHECKSUM_MODE="${mode}". Must be one of: ${valid.join(', ')}`);
+    }
+    // Default: strict in production, warn in dev/staging/test
+    if (mode) return mode as typeof valid[number];
+    return nodeEnv === 'production' ? 'strict' : 'warn';
+  })(),
+
+  // ── Rate limiter failure policy (#1320) ────────────────────────────────
+  /**
+   * When the rate limiter's store (Redis) fails, what to do:
+   * - 'open': allow requests (fail-open, availability over security)
+   * - 'closed': reject with 503 (fail-closed, security over availability)
+   * - 'local': fall back to per-instance in-memory counters (hybrid)
+   * Default: 'open' for general routes, 'closed' for auth endpoints.
+   */
+  rateLimitErrorPolicy: (() => {
+    const policy = (process.env.RATE_LIMIT_ERROR_POLICY ?? '').toLowerCase();
+    const valid = ['open', 'closed', 'local'] as const;
+    const validStr = valid as readonly string[];
+    if (policy && !validStr.includes(policy)) {
+      throw new Error(`Invalid RATE_LIMIT_ERROR_POLICY="${policy}". Must be one of: ${valid.join(', ')}`);
+    }
+    return policy as typeof valid[number] | '';
+  })(),
+
+  authRateLimitErrorPolicy: (() => {
+    const policy = (process.env.AUTH_RATE_LIMIT_ERROR_POLICY ?? '').toLowerCase();
+    const valid = ['open', 'closed', 'local'] as const;
+    const validStr = valid as readonly string[];
+    if (policy && !validStr.includes(policy)) {
+      throw new Error(`Invalid AUTH_RATE_LIMIT_ERROR_POLICY="${policy}". Must be one of: ${valid.join(', ')}`);
+    }
+    // Auth endpoints default to more restrictive: closed in production, local elsewhere
+    if (policy) return policy as typeof valid[number];
+    return nodeEnv === 'production' ? 'closed' : 'local';
+  })(),
+
 };
 
 export default config;
